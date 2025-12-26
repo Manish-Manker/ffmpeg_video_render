@@ -1,0 +1,39 @@
+
+URL=https://pixaupload.pixelnx.in/
+SEC=seckey_VmBz7eqtUAXZ4XDH3GCOhwxSY9cAVV
+DB=mongodb://showcase-dev:j45fk8dkr3j77fh6@18.210.187.76:27017/showcase-dev?authMechanism=SCRAM-SHA-256&authSource=admin
+
+
+
+logo: {
+  "x": 5,
+  "y": 5,
+  "width": 24,
+  "opacity": 1,
+  "aspectRatio": 0.6722301136363636,
+  "url": "https://d3orgd3vfbg4nb.cloudfront.net/showcaseai/temp/0.5535781700035349.jpg"
+}
+
+
+clips: [
+  {
+    "id": "mjmt16kozkb41kec4n",
+    "sourceURL": "https://d3orgd3vfbg4nb.cloudfront.net/showcaseai/temp/0.285009080116309.mp4",
+    "name": "video_1766749494403.mp4",
+    "duration": 37.012729,
+    "width": 720,
+    "height": 1280,
+    "startTrim": 0,
+    "endTrim": 14.65735171533613
+  },
+  {
+    "id": "mjmt2ra585190qu3ry3",
+    "sourceURL": "https://d3orgd3vfbg4nb.cloudfront.net/showcaseai/temp/0.413494478372993.mp4",
+    "name": "video_1766749567896.mp4",
+    "duration": 22.370958,
+    "width": 704,
+    "height": 1248,
+    "startTrim": 0,
+    "endTrim": 18.587634220588235
+  }
+]
