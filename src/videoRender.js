@@ -65,63 +65,112 @@ export const checkForRender = async () => {
     }
 };
 
-//old one 
 
+// old 2
 // const generateFFMPEGCommand1 = (clips, outputPath, bgAudio) => {
 //     const inputs = [];
 //     const filterComplexParts = [];
 
-//     // Get dimensions from first clip (assuming all clips should match)
 //     const width = clips[0]?.width || 720;
 //     const height = clips[0]?.height || 1280;
 
-//     // Process each clip
+//     // Calculate total video duration
+//     const totalDuration = clips.reduce((total, clip) => {
+//         const startTime = clip.startTrim || 0;
+//         const duration = (clip.endTrim || clip.duration) - startTime;
+//         return total + duration;
+//     }, 0);
+
+//     // Process video clips
 //     clips.forEach((clip, index) => {
 //         const startTime = clip.startTrim || 0;
 //         const duration = (clip.endTrim || clip.duration) - startTime;
 
-//         // Add input with seeking at decode time (more accurate)
 //         inputs.push(`-i "${clip.sourceURL}"`);
 
-//         // Trim each clip: use trim filter for accurate cutting
-//         // [index:v] selects video stream, [index:a] selects audio stream
 //         filterComplexParts.push(
 //             `[${index}:v]trim=start=${startTime}:duration=${duration},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${index}]`
 //         );
 
-//         // Handle audio - trim similarly
 //         filterComplexParts.push(
 //             `[${index}:a]atrim=start=${startTime}:duration=${duration},asetpts=PTS-STARTPTS,aresample=async=1[a${index}]`
 //         );
 //     });
+//     console.log("bgAudio ++++++----+++++  ",bgAudio);
 
-//     // Concatenation part
-//     const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
-//     const concatFilter = `${filterComplexParts.join(';')};${concatInputs}concat=n=${clips.length}:v=1:a=1[outv][outa]`;
+//     // Handle background audio
+//     if (bgAudio && bgAudio.url) {
+//         console.log("Adding audio --------------");
 
-//     // Build final command
-//     const command = [
-//         'ffmpeg',
-//         ...inputs,
-//         '-filter_complex', concatFilter,
-//         '-map', '[outv]',
-//         '-map', '[outa]',
-//         '-c:v', 'libx264',      // Video codec
-//         '-c:a', 'aac',          // Audio codec
-//         '-preset', 'fast',      // Encoding speed
-//         '-crf', '23',           // Quality (lower = better)
-//         '-movflags', '+faststart', // Optimize for web playback
-//         '-y',                   // Overwrite output
-//         `"${outputPath}"`       // Output file
-//     ].join(' ');
+//         inputs.push(`-i "${bgAudio.url}"`);
+//         const bgAudioIndex = clips.length;
+//         const volumeLevel = (bgAudio?.volume || 0.3); // Default to 30% volume
 
-//     console.log("Generated FFmpeg command:", command);
-//     return command;
+//         // Prepare background audio
+//         let bgAudioFilter = `[${bgAudioIndex}:a]`;
+
+//         if (bgAudio.isLooping) {
+//             bgAudioFilter += `aloop=loop=-1:size=2e9,atrim=0:${totalDuration},asetpts=PTS-STARTPTS,`;
+//         }
+
+//         bgAudioFilter += `volume=${volumeLevel}[bgaudio]`;
+//         filterComplexParts.push(bgAudioFilter);
+
+//         // Concatenate video clips
+//         const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
+//         const concatVideoFilter = `${concatInputs}concat=n=${clips.length}:v=1:a=1[concatv][concala]`;
+
+//         // Mix audio: original audio at 0.7, background at 0.3 (adjust as needed)
+//         const mixFilter = `[concala]volume=0.7[origvol];[bgaudio]volume=0.3[bgvol];[origvol][bgvol]amix=inputs=2:duration=longest,volume=1.5[mixedaudio]`;
+
+//         const fullFilter = `${filterComplexParts.join(';')};${concatVideoFilter};${mixFilter}`;
+
+//         const command = [
+//             'ffmpeg',
+//             ...inputs,
+//             '-filter_complex', fullFilter,
+//             '-map', '[concatv]',
+//             '-map', '[mixedaudio]',
+//             '-c:v', 'libx264',
+//             '-c:a', 'aac',
+//             '-preset', 'fast',
+//             '-crf', '23',
+//             '-movflags', '+faststart',
+//             '-y',
+//             `"${outputPath}"`
+//         ].join(' ');
+
+//         console.log("FFmpeg command with background music:", command);
+//         return command;
+//     } else {
+//         // Original logic without background audio
+//         const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
+//         const concatFilter = `${filterComplexParts.join(';')};${concatInputs}concat=n=${clips.length}:v=1:a=1[outv][outa]`;
+
+//         const command = [
+//             'ffmpeg',
+//             ...inputs,
+//             '-filter_complex', concatFilter,
+//             '-map', '[outv]',
+//             '-map', '[outa]',
+//             '-c:v', 'libx264',
+//             '-c:a', 'aac',
+//             '-preset', 'fast',
+//             '-crf', '23',
+//             '-movflags', '+faststart',
+//             '-y',
+//             `"${outputPath}"`
+//         ].join(' ');
+
+//         console.log("FFmpeg command without background music:", command);
+//         return command;
+//     }
 // };
 
 const generateFFMPEGCommand = (clips, outputPath, bgAudio) => {
     const inputs = [];
     const filterComplexParts = [];
+    const audioStreams = [];
 
     const width = clips[0]?.width || 720;
     const height = clips[0]?.height || 1280;
@@ -144,38 +193,66 @@ const generateFFMPEGCommand = (clips, outputPath, bgAudio) => {
             `[${index}:v]trim=start=${startTime}:duration=${duration},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${index}]`
         );
 
-        filterComplexParts.push(
-            `[${index}:a]atrim=start=${startTime}:duration=${duration},asetpts=PTS-STARTPTS,aresample=async=1[a${index}]`
-        );
+
+        if (clip.hasAudio) {
+            // Add audio processing with volume control
+            const volume = clip.volume || 1;
+            filterComplexParts.push(
+                `[${index}:a]atrim=start=${startTime}:duration=${duration},asetpts=PTS-STARTPTS,aresample=async=1,volume=${volume}[a${index}]`
+            );
+            audioStreams.push(`[a${index}]`);
+        } else {
+            // If no audio, create silent audio track
+            filterComplexParts.push(
+                `anullsrc=channel_layout=stereo:sample_rate=48000[null${index}];[null${index}]atrim=0:${duration},asetpts=PTS-STARTPTS[a${index}]`
+            );
+            audioStreams.push(`[a${index}]`);
+        }
     });
-    console.log("bgAudio ++++++----+++++  ",bgAudio);
-    
     // Handle background audio
     if (bgAudio && bgAudio.url) {
-        console.log("Adding audio --------------");
-        
+        console.log("Adding background audio");
+
         inputs.push(`-i "${bgAudio.url}"`);
         const bgAudioIndex = clips.length;
-        const volumeLevel = (bgAudio?.volume || 0.3); // Default to 30% volume
+        const volumeLevel = (bgAudio?.volume || 0.3);
 
         // Prepare background audio
         let bgAudioFilter = `[${bgAudioIndex}:a]`;
-        
+
         if (bgAudio.isLooping) {
             bgAudioFilter += `aloop=loop=-1:size=2e9,atrim=0:${totalDuration},asetpts=PTS-STARTPTS,`;
         }
-        
+
         bgAudioFilter += `volume=${volumeLevel}[bgaudio]`;
         filterComplexParts.push(bgAudioFilter);
 
-        // Concatenate video clips
-        const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
-        const concatVideoFilter = `${concatInputs}concat=n=${clips.length}:v=1:a=1[concatv][concala]`;
-        
-        // Mix audio: original audio at 0.7, background at 0.3 (adjust as needed)
-        const mixFilter = `[concala]volume=0.7[origvol];[bgaudio]volume=0.3[bgvol];[origvol][bgvol]amix=inputs=2:duration=longest,volume=1.5[mixedaudio]`;
-        
-        const fullFilter = `${filterComplexParts.join(';')};${concatVideoFilter};${mixFilter}`;
+        // Concatenate all video audio streams
+        if (audioStreams.length > 0) {
+            const concatAudioFilter = `${audioStreams.join('')}concat=n=${clips.length}:v=0:a=1[concala]`;
+            filterComplexParts.push(concatAudioFilter);
+        } else {
+            // If no video audio at all, create empty audio stream
+            filterComplexParts.push(`anullsrc=channel_layout=stereo:sample_rate=48000[concala]`);
+        }
+
+        // Concatenate video streams
+        const concatVideoFilter = clips.map((_, index) => `[v${index}]`).join('') +
+            `concat=n=${clips.length}:v=1:a=0[concatv]`;
+        filterComplexParts.push(concatVideoFilter);
+
+        // Mix video audio with background audio
+        let audioMixFilter;
+        if (audioStreams.length > 0) {
+            // Mix both audio sources: video audio at 0.7, background at 0.3 (adjust as needed)
+            audioMixFilter = `[concala]volume=0.7[origvol];[bgaudio]volume=0.3[bgvol];[origvol][bgvol]amix=inputs=2:duration=longest,volume=1.5[mixedaudio]`;
+        } else {
+            // Only background audio
+            audioMixFilter = `[bgaudio]volume=1.0[mixedaudio]`;
+        }
+        filterComplexParts.push(audioMixFilter);
+
+        const fullFilter = filterComplexParts.join(';');
 
         const command = [
             'ffmpeg',
@@ -195,16 +272,32 @@ const generateFFMPEGCommand = (clips, outputPath, bgAudio) => {
         console.log("FFmpeg command with background music:", command);
         return command;
     } else {
-        // Original logic without background audio
-        const concatInputs = clips.map((_, index) => `[v${index}][a${index}]`).join('');
-        const concatFilter = `${filterComplexParts.join(';')};${concatInputs}concat=n=${clips.length}:v=1:a=1[outv][outa]`;
+        // No background audio
+        // Concatenate videos
+        const concatVideoFilter = clips.map((_, index) => `[v${index}]`).join('') +
+            `concat=n=${clips.length}:v=1:a=0[outv]`;
+
+        // Concatenate audio streams if they exist
+        let concatAudioFilter = '';
+        let finalAudioMap = '';
+
+        if (audioStreams.length > 0) {
+            concatAudioFilter = `${audioStreams.join('')}concat=n=${clips.length}:v=0:a=1[outa]`;
+            finalAudioMap = '-map [outa]';
+        } else {
+            // Create silent audio track if no audio at all
+            concatAudioFilter = `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=0:${totalDuration}[outa]`;
+            finalAudioMap = '-map [outa]';
+        }
+
+        const fullFilter = `${filterComplexParts.join(';')};${concatVideoFilter};${concatAudioFilter}`;
 
         const command = [
             'ffmpeg',
             ...inputs,
-            '-filter_complex', concatFilter,
+            '-filter_complex', fullFilter,
             '-map', '[outv]',
-            '-map', '[outa]',
+            ...(finalAudioMap ? [finalAudioMap] : []),
             '-c:v', 'libx264',
             '-c:a', 'aac',
             '-preset', 'fast',
@@ -219,9 +312,32 @@ const generateFFMPEGCommand = (clips, outputPath, bgAudio) => {
     }
 };
 
+// Helper function to check if a video has audio (you might want to implement this separately)
+// You would need to probe the video first to check for audio streams
+const checkVideoHasAudio = async (videoPath, timeout = 5000) => {
+    try {
+        const command = `ffprobe -v error -show_streams -select_streams a -of json -timeout 5000000 "${videoPath}"`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const { stdout } = await execAsync(command, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        const probeData = JSON.parse(stdout);
+        return probeData.streams && probeData.streams.length > 0;
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.warn(`Audio check timeout for ${videoPath}`);
+        } else {
+            console.error(`Error checking audio for ${videoPath}:`, error.message);
+        }
+        return false;
+    }
+};
 
 const renderVideo = async (logo, clips, videoEditorId, bgAudio) => {
-     console.log("renderVideo received bgAudio:", bgAudio);
+
     let outputPath, finalVideoPath;
 
     try {
@@ -244,33 +360,54 @@ const renderVideo = async (logo, clips, videoEditorId, bgAudio) => {
         outputPath = `outputs/${timestamp}-vid.mp4`;
         finalVideoPath = outputPath;
 
+        const clipsWithAudio = await Promise.all(
+            clips.map(async (clip) => {
+                const hasAudio = await checkVideoHasAudio(clip.sourceURL);
+                return {
+                    ...clip,
+                    hasAudio
+                };
+            })
+        );
+
 
         console.log(`Merging clips for bgAudio -> : ${bgAudio}`);
-        const clipMergeCommand = await generateFFMPEGCommand(clips, outputPath , bgAudio);
+        const clipMergeCommand = await generateFFMPEGCommand(clipsWithAudio, outputPath, bgAudio);
 
 
         await execAsync(clipMergeCommand);
         console.log(`Clips merged successfully for video: ${videoEditorId}`);
 
-        if(logo && Object.keys(logo).length > 0 && logo?.audioURL) {
-            console.log(`Adding logo to video: ${videoEditorId}`);
-            let audioCmd = `ffmpeg -i ${outputPath} -stream_loop -1 -i ${logo.audioURL} -c:v copy -c:a aac -shortest ${'audio-'+outputPath}`;
-        }
 
         if (logo && Object.keys(logo).length > 0) {
             console.log(`Adding logo to video: ${videoEditorId}`);
 
             const videoWidth = clips[0]?.width || 704;
             const videoHeight = clips[0]?.height || 1248;
-            const { url, x, y, width, opacity, aspectRatio } = logo;
+            const { url, x, y, width, opacity, aspectRatio, originalWidth, originalHeight } = logo;
 
+            // Calculate logo dimensions in pixels
             const logoWidthInPixels = Math.round((width / 100) * videoWidth);
+
+            // Calculate height based on original aspect ratio, not the provided aspectRatio
+            // Use original dimensions to get correct aspect ratio
+            const actualAspectRatio = originalWidth / originalHeight; // Should be ~500/79 = 6.33
+            const logoHeightInPixels = Math.round(logoWidthInPixels / actualAspectRatio);
+
+            // Calculate position
             const xInPixels = Math.round((x / 100) * videoWidth);
             const yInPixels = Math.round((y / 100) * videoHeight);
 
+            // Ensure logo doesn't go outside video bounds
+            const maxX = videoWidth - logoWidthInPixels;
+            const maxY = videoHeight - logoHeightInPixels;
+            const finalX = Math.max(0, Math.min(xInPixels, maxX));
+            const finalY = Math.max(0, Math.min(yInPixels, maxY));
+
             const outputWithLogoPath = `outputs/${timestamp}-with-logo.mp4`;
 
-            const logoCmd = `ffmpeg -i ${outputPath} -i ${url} -filter_complex "[1:v]scale=${logoWidthInPixels * aspectRatio}:-1,format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${xInPixels}:${yInPixels}" -c:a copy ${outputWithLogoPath}`;
+            // Use scale=width:height syntax
+            const logoCmd = `ffmpeg -i "${outputPath}" -i "${url}" -filter_complex "[1:v]scale=${logoWidthInPixels}:${logoHeightInPixels},format=rgba,colorchannelmixer=aa=${opacity}[logo];[0:v][logo]overlay=${finalX}:${finalY}" -c:a copy "${outputWithLogoPath}"`;
 
             await execAsync(logoCmd);
 
@@ -301,7 +438,7 @@ const renderVideo = async (logo, clips, videoEditorId, bgAudio) => {
         let thumbnailUrl = null;
         if (clips && clips.length > 0) {
             try {
-                thumbnailUrl = await generateAndUploadThumbnail(clips[0], videoEditorId);
+                thumbnailUrl = await generateAndUploadThumbnail(clips[0], videoEditorId,finalResolvedPath);
             } catch (thumbnailError) {
                 console.warn(`Failed to generate thumbnail for ${videoEditorId}:`, thumbnailError);
                 // Continue even if thumbnail generation fails
@@ -368,7 +505,7 @@ const renderVideo = async (logo, clips, videoEditorId, bgAudio) => {
 };
 
 
-export const generateAndUploadThumbnail = async (clip, videoEditorId) => {
+export const generateAndUploadThumbnail = async (clip, videoEditorId,finalResolvedPath) => {
     let thumbnailPath = null;
 
     try {
@@ -386,12 +523,12 @@ export const generateAndUploadThumbnail = async (clip, videoEditorId) => {
         thumbnailPath = `thumbnails/${timestamp}-${videoEditorId}-thumbnail.jpg`;
 
         const thumbnailTime = Math.min(0.5, (clip.duration || 10) / 2);
-     
-        const ffmpegCommand = `ffmpeg -ss ${thumbnailTime} -i "${clip.sourceURL}" -frames:v 1 -qscale:v 2 -vf "scale=${clip.width || 704}:${clip.height || 1248}" ${thumbnailPath}`;
+
+        const ffmpegCommand = `ffmpeg -ss ${thumbnailTime} -i "${finalResolvedPath}" -frames:v 1 -qscale:v 2 -vf "scale=${clip.width || 704}:${clip.height || 1248}" ${thumbnailPath}`;
 
         console.log(`Executing thumbnail command: ${ffmpegCommand}`);
 
-        await execAsync(ffmpegCommand, { timeout: 30000 }); 
+        await execAsync(ffmpegCommand, { timeout: 30000 });
 
         // Verify thumbnail was created
         try {
@@ -405,7 +542,7 @@ export const generateAndUploadThumbnail = async (clip, videoEditorId) => {
             throw new Error(`Thumbnail file not created: ${accessErr.message}`);
         }
 
-        
+
         const uploadResponse = await fileToUpload(
             { tempFilePath: path.resolve(thumbnailPath) },
             {
