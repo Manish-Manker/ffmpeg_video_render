@@ -25,7 +25,7 @@ cron.schedule('*/1 * * * *', checkForRender, {
 });
 
 
-console.log("Cron job scheduled to run every 50 seconds");
+console.log("Cron job scheduled to run every 1 minute");
 
 // Run the task immediately on server start
 checkForRender();
