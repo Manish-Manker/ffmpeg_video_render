@@ -220,7 +220,166 @@ export const checkForRender = async () => {
 //     ].join(' ');
 // };
  
- 
+ const generateFFMPEGCommand = (clips, outputPath, bgAudio) => {
+    const inputs = [];
+    const filters = [];
+
+    const outWidth = clips[0]?.width || 720;
+    const outHeight = clips[0]?.height || 1280;
+
+    let inputIndex = 0;
+
+    // ---------------------------------------------------
+    // 1. INPUTS
+    // ---------------------------------------------------
+    clips.forEach(clip => {
+        if (clip.type === "image") {
+            // loop image for duration
+            inputs.push(`-loop 1 -t ${clip.duration} -i "${clip.sourceURL}"`);
+        } else {
+            inputs.push(`-i "${clip.sourceURL}"`);
+        }
+        clip._videoInput = inputIndex++;
+    });
+
+    clips.forEach(clip => {
+        if (clip.audio?.sourceURL) {
+            inputs.push(`-i "${clip.audio.sourceURL}"`);
+            clip._extAudioInput = inputIndex++;
+        }
+    });
+
+    if (bgAudio?.sourceURL) {
+        inputs.push(`-i "${bgAudio.sourceURL}"`);
+        bgAudio._input = inputIndex++;
+    }
+
+    // ---------------------------------------------------
+    // 2. PROCESS CLIPS
+    // ---------------------------------------------------
+    clips.forEach((clip, i) => {
+        const vIn = clip._videoInput;
+        const start = clip.startTrim || 0;
+        const duration = (clip.endTrim || clip.duration) - start;
+
+        if (clip.type === "image") {
+            // -------- IMAGE WITH BLUR BACKGROUND --------
+            filters.push(
+                // background
+                `[${vIn}:v]scale=${outWidth}:${outHeight}:force_original_aspect_ratio=increase,` +
+                `crop=${outWidth}:${outHeight},gblur=sigma=50,eq=brightness=-0.1[bg${i}]`
+            );
+
+            filters.push(
+                // foreground
+                `[${vIn}:v]scale=${outWidth}:${outHeight}:force_original_aspect_ratio=decrease[fg${i}]`
+            );
+
+            filters.push(
+                // overlay
+                `[bg${i}][fg${i}]overlay=(W-w)/2:(H-h)/2,` +
+                `trim=duration=${duration},setpts=PTS-STARTPTS,setsar=1[v${i}]`
+            );
+        } else {
+            // -------- VIDEO (UNCHANGED) --------
+            filters.push(
+                `[${vIn}:v]trim=start=${start}:duration=${duration},setpts=PTS-STARTPTS,` +
+                `scale=${outWidth}:${outHeight}:force_original_aspect_ratio=decrease,` +
+                `pad=${outWidth}:${outHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`
+            );
+        }
+
+        const audioLayers = [];
+
+        if (clip.hasAudio) {
+            filters.push(
+                `[${vIn}:a]atrim=start=${start}:duration=${duration},asetpts=PTS-STARTPTS,` +
+                `volume=${clip.volume ?? 1}[va${i}]`
+            );
+            audioLayers.push(`[va${i}]`);
+        }
+
+        if (clip._extAudioInput !== undefined) {
+            const aStart = clip.audio.startTrim || 0;
+            const aDur = Math.min(
+                (clip.audio.endTrim || clip.audio.duration) - aStart,
+                duration
+            );
+
+            filters.push(
+                `[${clip._extAudioInput}:a]atrim=start=${aStart}:duration=${aDur},` +
+                `asetpts=PTS-STARTPTS,volume=${clip.audio.volume ?? 0.5}[ea${i}]`
+            );
+            audioLayers.push(`[ea${i}]`);
+        }
+
+        if (audioLayers.length > 0) {
+            filters.push(
+                `${audioLayers.join("")}amix=inputs=${audioLayers.length}:normalize=0[a${i}]`
+            );
+        } else {
+            filters.push(
+                `anullsrc=channel_layout=stereo:sample_rate=48000:d=${duration}[a${i}]`
+            );
+        }
+    });
+
+    // ---------------------------------------------------
+    // 3. CONCAT
+    // ---------------------------------------------------
+    filters.push(
+        `${clips.map((_, i) => `[v${i}]`).join("")}concat=n=${clips.length}:v=1:a=0[concatv]`
+    );
+
+    filters.push(
+        `${clips.map((_, i) => `[a${i}]`).join("")}concat=n=${clips.length}:v=0:a=1[concata]`
+    );
+
+    // ---------------------------------------------------
+    // 4. BACKGROUND AUDIO
+    // ---------------------------------------------------
+    if (bgAudio?.sourceURL) {
+        const totalDuration = clips.reduce(
+            (sum, c) => sum + ((c.endTrim || c.duration) - (c.startTrim || 0)),
+            0
+        );
+
+        let bgChain = `[${bgAudio._input}:a]`;
+
+        if (bgAudio.isLooping) {
+            bgChain += `aloop=loop=-1:size=2e9,`;
+        }
+
+        bgChain += `atrim=0:${totalDuration},asetpts=PTS-STARTPTS,` +
+            `volume=${bgAudio.volume ?? 0.3}[bg]`;
+
+        filters.push(bgChain);
+
+        filters.push(
+            `[concata][bg]amix=inputs=2:duration=longest:dropout_transition=2[mixout]`
+        );
+    }
+
+    // ---------------------------------------------------
+    // 5. FINAL COMMAND
+    // ---------------------------------------------------
+    return [
+        "ffmpeg",
+        ...inputs,
+        "-filter_complex", `"${filters.join(";")}"`,
+        "-map", "[concatv]",
+        "-map", bgAudio?.sourceURL ? "[mixout]" : "[concata]",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-preset", "fast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-y",
+        `"${outputPath}"`
+    ].join(" ");
+};
+
  
 const checkVideoHasAudio = async (videoPath, timeout = 5000) => {
     try {
@@ -346,7 +505,8 @@ const renderVideo = async (logo, clips, videoEditorId, bgAudio) => {
         let thumbnailUrl = null;
         if (clips && clips.length > 0) {
             try {
-                thumbnailUrl = await generateAndUploadThumbnail(clips[0], videoEditorId, finalResolvedPath);
+                // thumbnailUrl = await generateAndUploadThumbnail(clips[0], videoEditorId, finalResolvedPath);
+                thumbnailUrl = "asdf";
             } catch (thumbnailError) {
                 console.warn(`Failed to generate thumbnail for ${videoEditorId}:`, thumbnailError);
                 // Continue even if thumbnail generation fails
@@ -482,8 +642,5 @@ export const generateAndUploadThumbnail = async (clip, videoEditorId, finalResol
         return null;
     }
 };
- 
- 
- 
  
  
