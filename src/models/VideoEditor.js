@@ -1,6 +1,6 @@
-import mongoose, { Schema, model } from "mongoose";
-
-
+import { Schema, model } from "mongoose";
+ 
+ 
 const videoEditorSchema = new Schema(
     {
         userId: {
@@ -9,35 +9,52 @@ const videoEditorSchema = new Schema(
             required: true,
             index: true,
         },
-        title: { type: String, required: true },
-        slug: { type: String, default: "" },
+        title: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+        media: {
+            url: { type: String, default: "" },
+            thumbnail: { type: String, default: "" },
+            key: { type: String, default: "" },
+            width: { type: Number },
+            height: { type: Number },
+            format: { type: String },
+            duration: { type: Number },
+            size: { type: Number },
+        },
         portrait: {
-            image: { type: String },
-            video: { type: String },
+            image: { type: String, default: "" },
+            video: { type: String, default: "" },
         },
-
-        mettafinalVideoFile: {
-            url: { type: String },
-            key: { type: String },
-            height: { type: String },
-            width: { type: String },
-            formate: { type: String },
-            duration: { type: String },
+        editorData: {
+            type: Schema.Types.Mixed, default: null
         },
-
-        logo: { type: mongoose.Schema.Types.Mixed, default: null },
-        clips: { type: mongoose.Schema.Types.Mixed, default: null },
+        renderData: {
+            type: Schema.Types.Mixed, default: null
+        },
         status: {
             type: String,
-            enum: ['draft', 'processing', 'completed', 'failed', 'rendering'],
+            enum: ["draft", "rendering", "processing", "completed", "failed"],
+            default: "draft",
+            index: true,
         },
-        isDeleted: { type: Boolean, default: false },
-        deletedAt: { type: Date, default: null },
+        isDeleted: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+        deletedAt: {
+            type: Date,
+            default: null,
+        },
     },
     {
         timestamps: true,
     }
 );
-
 const videoEditorModel = model("VideoEditor", videoEditorSchema);
 export default videoEditorModel;
+ 
+ 
